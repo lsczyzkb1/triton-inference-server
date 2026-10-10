@@ -5,7 +5,7 @@ on:
       ref:
         description: 'Triton分支/标签'
         required: true
-        default: 'r2.73.0'
+        default: 'main'
 
 jobs:
   build:

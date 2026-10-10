@@ -7,14 +7,12 @@ on:
         required: true
         default: 'main'
 
-# 完全屏蔽Node版本兼容问题的环境变量
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
 jobs:
   build:
-    # 改用预装完整VS2022的windows-2022官方镜像，比windows-2025兼容更好
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4.2.2
@@ -23,25 +21,24 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      # 完全抛弃有问题的ilammy/msvc-dev-cmd，直接调用系统原生的VS环境加载脚本
-      - name: 原生加载MSVC 2022编译环境
+      # 用call命令加载MSVC环境，确保环境变量持久化生效，强制指定cl.exe为编译器
+      - name: 加载MSVC 2022原生编译环境
         run: |
-          "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          echo "CC=cl.exe" >> $env:GITHUB_ENV
+          echo "CXX=cl.exe" >> $env:GITHUB_ENV
           cl
         shell: cmd
+
+      - name: 卸载MinGW避免编译器冲突
+        run: choco uninstall mingw -x -y --no-progress
 
       - name: 安装CMake和Ninja
         run: choco install cmake ninja --no-progress -y
 
-      - name: CMake配置 关闭所有GPU依赖
-        run: |
-          cmake -B build -G Ninja `
-          -DCMAKE_BUILD_TYPE=Release `
-          -DTRITON_ENABLE_GPU=OFF `
-          -DTRITON_ENABLE_TENSORRT=OFF `
-          -DTRITON_ENABLE_PYTORCH=OFF `
-          -DTRITON_ENABLE_TENSORFLOW=OFF `
-          -DTRITON_BACKEND_REPO_TAG=r2.73.0
+      # 把所有参数写在单行，彻底避免PowerShell反引号转义出错的问题，同时关闭所有GPU相关的隐含开关
+      - name: CMake纯CPU模式配置
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl.exe -DCMAKE_CXX_COMPILER=cl.exe -DTRITON_ENABLE_GPU=OFF -DTRITON_ENABLE_TENSORRT=OFF -DTRITON_ENABLE_METRICS_GPU=OFF -DTRITON_ENABLE_PYTORCH=OFF -DTRITON_ENABLE_TENSORFLOW=OFF -DTRITON_BACKEND_REPO_TAG="r2.73.0"
 
       - name: 多线程编译核心目标
         run: cmake --build build -j 8 --target tritonserver

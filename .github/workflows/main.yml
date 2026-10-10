@@ -7,27 +7,28 @@ on:
         required: true
         default: 'main'
 
-# 全局声明Node24兼容变量，完全消除弃用警告
+# 完全屏蔽Node版本兼容问题的环境变量
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
 jobs:
   build:
-    runs-on: windows-2025
+    # 改用预装完整VS2022的windows-2022官方镜像，比windows-2025兼容更好
+    runs-on: windows-2022
     steps:
-      # 升级到完全原生支持Node24的最新checkout版本
       - uses: actions/checkout@v4.2.2
         with:
           ref: ${{ github.event.inputs.ref }}
           submodules: recursive
           fetch-depth: 0
 
-      # 修正参数名：把错误的msvc-version改成官方合法的vsversion，避免参数校验失败
-      - name: 配置MSVC编译环境
-        uses: ilammy/msvc-dev-cmd@v1.13.0
-        with:
-          arch: x64
-          vsversion: '17'
+      # 完全抛弃有问题的ilammy/msvc-dev-cmd，直接调用系统原生的VS环境加载脚本
+      - name: 原生加载MSVC 2022编译环境
+        run: |
+          "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cl
+        shell: cmd
 
       - name: 安装CMake和Ninja
         run: choco install cmake ninja --no-progress -y
@@ -48,7 +49,6 @@ jobs:
       - name: 打包成品压缩包
         run: 7z a triton-windows-cpu-release.zip ./build/install/bin/tritonserver.exe ./build/install/bin/*.dll ./build/install/backends/
 
-      # 升级到完全支持Node24的最新上传Action
       - name: 上传编译产物
         uses: actions/upload-artifact@v4.4.3
         with:

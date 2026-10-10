@@ -7,20 +7,31 @@ on:
         required: true
         default: 'main'
 
+# 全局强制兼容GitHub最新Node24环境，直接消掉版本报错
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2025
     steps:
-      - uses: actions/checkout@v4
+      # 升级checkout到适配Node24的最新版本，同时补全全量拉取配置
+      - uses: actions/checkout@v4.2.1
         with:
           ref: ${{ github.event.inputs.ref }}
           submodules: recursive
+          fetch-depth: 0
 
+      # 锁定msvc-dev-cmd到兼容Node24的最新正式版
       - name: 配置MSVC编译环境
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+        with:
+          arch: x64
+          msvc-version: '14.3'
 
+      # 加--no-progress参数避免Chocolatey输出日志过长超时
       - name: 安装CMake和Ninja
-        run: choco install cmake ninja -y
+        run: choco install cmake ninja --no-progress -y
 
       - name: CMake配置 关闭所有GPU依赖
         run: |
@@ -32,14 +43,18 @@ jobs:
           -DTRITON_ENABLE_TENSORFLOW=OFF `
           -DTRITON_BACKEND_REPO_TAG=r2.73.0
 
+      # 只编译tritonserver核心目标，跳过所有测试和示例代码，大幅缩短编译时间
       - name: 多线程编译
-        run: cmake --build build -j 8
+        run: cmake --build build -j 8 --target tritonserver
 
+      # 精简打包，只保留可执行文件和必要依赖，去掉冗余文件
       - name: 打包成品压缩包
-        run: 7z a triton-windows-cpu-release.zip ./build/install/*
+        run: 7z a triton-windows-cpu-release.zip ./build/install/bin/tritonserver.exe ./build/install/bin/*.dll ./build/install/backends/
 
+      # 升级上传Action到适配Node24的最新版本，避免上传阶段报错
       - name: 上传编译产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.4.0
         with:
           name: triton-windows-x64-cpu
           path: triton-windows-cpu-release.zip
+          retention-days: 30
